@@ -1,0 +1,49 @@
+<launch>
+
+  <!--
+      image source
+  -->
+
+  <node pkg="utility_nodes"
+	type="publish_local_image"
+	args="$(find barcode_reader)/images/*.jpg"
+	name="local_image"
+	output="screen">
+    <param name="topic" value="local_image" />
+    <param name="frame" value="local_image" />
+    <param name="encoding" value="bgr8" />
+    <param name="interval" value="0.1" />
+  </node>
+
+  <!--
+      barcode reader
+  -->
+
+  <node pkg="barcode_reader"
+	type="barcode_reader_node"
+	name="barcode_reader"
+	output="screen">
+    <param name="image_topic" value="local_image" />
+    <param name="image_transport" value="raw" />
+    <param name="barcode_topic" value="barcode_image" />
+    <param name="barcode_interval" value="1." />
+    <param name="text_tickness" value="2" />
+    <rosparam param="text_rgb">
+      [255, 255, 255]
+    </rosparam>
+    <param name="line_tickness" value="3" />
+    <rosparam param="line_rgb">
+      [0, 255, 0]
+    </rosparam>
+  </node>
+
+  <!--
+      viewer
+  -->
+
+  <node pkg="rqt_image_view"
+	type="rqt_image_view"
+	name="rqt_image_view"
+	output="screen" />
+
+</launch>
