@@ -6,8 +6,12 @@
 
 #include <cv_bridge/cv_bridge.h>
 #include <image_transport/image_transport.h>
-#include <image_transport/publisher.h>
-#include <image_transport/subscriber.h>
+#include <interprocess_utilities/image_transport_publisher.hpp>
+#include <interprocess_utilities/image_transport_subscriber.hpp>
+#include <interprocess_utilities/interprocess_publisher.hpp>
+#include <interprocess_utilities/interprocess_subscriber.hpp>
+#include <interprocess_utilities/publisher_interface.hpp>
+#include <interprocess_utilities/subscriber_interface.hpp>
 #include <ros/console.h>
 #include <ros/duration.h>
 #include <ros/node_handle.h>
@@ -27,10 +31,11 @@ class BarcodeReader {
    public:
     struct Params {
         std::string image_topic;
+        bool use_interprocess;
         std::string image_transport;
 
         std::string barcode_topic;
-        ros::Duration barcode_interval;
+        ros::Duration scan_interval;
 
         int text_tickness;
         cv::Scalar text_color;
@@ -39,28 +44,36 @@ class BarcodeReader {
     };
 
    public:
-    BarcodeReader(const ros::NodeHandle &handle, const Params &params)
-        : handle_(handle), it_handle_(handle), params_(params) {
+    BarcodeReader(const ros::NodeHandle &nh, const Params &params) : nh_(nh), params_(params) {
+        namespace iu = interprocess_utilities;
+
         // enable QRcode detection with symbol positions
         scanner_.set_config(zbar::ZBAR_NONE, zbar::ZBAR_CFG_ENABLE, 0);
         scanner_.set_config(zbar::ZBAR_QRCODE, zbar::ZBAR_CFG_ENABLE, 1);
         scanner_.set_config(zbar::ZBAR_NONE, zbar::ZBAR_CFG_POSITION, 1);
 
-        //
-        it_subscriber_ =
-            it_handle_.subscribe(params_.image_topic, 1, &BarcodeReader::saveImageMsg, this,
-                                 image_transport::TransportHints(params_.image_transport));
+        // setup the subscriber and the publisher of the given interface
+        if (params_.use_interprocess) {
+            subscriber_ = iu::subscribeInterprocess<sensor_msgs::Image>(
+                nh_.resolveName(params_.image_topic), &BarcodeReader::saveImageMsg, this);
+            publisher_ = iu::advertiseInterprocess<sensor_msgs::Image>(
+                nh_.resolveName(params_.barcode_topic));
+        } else {
+            const image_transport::ImageTransport it(nh_);
+            subscriber_ =
+                iu::subscribeImageTransport(it, params_.image_topic, &BarcodeReader::saveImageMsg,
+                                            this, params_.image_transport);
+            publisher_ = iu::advertiseImageTransport(it, params_.barcode_topic);
+        }
 
-        //
-        it_publisher_ = it_handle_.advertise(params_.barcode_topic, 1);
-
-        //
-        timer_ = handle_.createTimer(params_.barcode_interval, &BarcodeReader::scanImageMsg, this);
+        // start scanning barcodes
+        timer_ = nh_.createTimer(params_.scan_interval, &BarcodeReader::scanImageMsg, this);
     }
 
     virtual ~BarcodeReader() {
+        // stop the timer first or the timer may call the publisher after the publisher's
+        // destruction
         timer_.stop();
-        it_subscriber_.shutdown();
     }
 
    private:
@@ -74,7 +87,7 @@ class BarcodeReader {
         // 0. do nothing if no nodes sbscribe barcode image topic
         //
 
-        if (it_publisher_.getNumSubscribers() == 0) {
+        if (publisher_->getNumSubscribers() == 0) {
             return;
         }
 
@@ -149,7 +162,7 @@ class BarcodeReader {
         // 4. publish the barcode image
         //
 
-        it_publisher_.publish(barcode_image->toImageMsg());
+        publisher_->publish(*barcode_image->toImageMsg());
     }
 
     void putText(cv::Mat &image, const std::string &text, const cv::Rect &rect) {
@@ -164,12 +177,11 @@ class BarcodeReader {
    private:
     const Params params_;
 
-    ros::NodeHandle handle_;
+    ros::NodeHandle nh_;
     ros::Timer timer_;
 
-    image_transport::ImageTransport it_handle_;
-    image_transport::Subscriber it_subscriber_;
-    image_transport::Publisher it_publisher_;
+    interprocess_utilities::SubscriberInterface<sensor_msgs::Image>::Ptr subscriber_;
+    interprocess_utilities::PublisherInterface<sensor_msgs::Image>::Ptr publisher_;
 
     sensor_msgs::ImageConstPtr image_msg_;
     boost::mutex mutex_;
