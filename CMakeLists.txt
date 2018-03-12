@@ -8,8 +8,6 @@ find_package(
   catkin REQUIRED COMPONENTS
   cv_bridge
   image_transport
-  interprocess_utilities
-  param_utilities
   roscpp
   sensor_msgs
   )
@@ -106,7 +104,7 @@ find_package(
 catkin_package(
   INCLUDE_DIRS include
 #  LIBRARIES barcode_reader
-  CATKIN_DEPENDS cv_bridge image_transport interprocess_utilities param_utilities roscpp sensor_msgs
+  CATKIN_DEPENDS cv_bridge image_transport roscpp sensor_msgs
 #  DEPENDS system_lib
 )
 

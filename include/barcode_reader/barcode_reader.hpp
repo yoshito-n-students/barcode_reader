@@ -6,12 +6,6 @@
 
 #include <cv_bridge/cv_bridge.h>
 #include <image_transport/image_transport.h>
-#include <interprocess_utilities/image_transport_publisher.hpp>
-#include <interprocess_utilities/image_transport_subscriber.hpp>
-#include <interprocess_utilities/interprocess_publisher.hpp>
-#include <interprocess_utilities/interprocess_subscriber.hpp>
-#include <interprocess_utilities/publisher_interface.hpp>
-#include <interprocess_utilities/subscriber_interface.hpp>
 #include <ros/console.h>
 #include <ros/duration.h>
 #include <ros/node_handle.h>
@@ -28,13 +22,10 @@
 namespace barcode_reader {
 
 class BarcodeReader {
-   public:
+  public:
     struct Params {
-        std::string image_topic;
-        bool use_interprocess;
         std::string image_transport;
 
-        std::string barcode_topic;
         ros::Duration scan_interval;
 
         int text_tickness;
@@ -43,42 +34,32 @@ class BarcodeReader {
         cv::Scalar line_color;
     };
 
-   public:
-    BarcodeReader(const ros::NodeHandle &nh, const Params &params) : nh_(nh), params_(params) {
-        namespace iu = interprocess_utilities;
-
+  public:
+    BarcodeReader(const ros::NodeHandle &nh, const Params &params) : params_(params) {
         // enable QRcode detection with symbol positions
         scanner_.set_config(zbar::ZBAR_NONE, zbar::ZBAR_CFG_ENABLE, 0);
         scanner_.set_config(zbar::ZBAR_QRCODE, zbar::ZBAR_CFG_ENABLE, 1);
         scanner_.set_config(zbar::ZBAR_NONE, zbar::ZBAR_CFG_POSITION, 1);
 
         // setup the subscriber and the publisher of the given interface
-        if (params_.use_interprocess) {
-            subscriber_ = iu::subscribeInterprocess<sensor_msgs::Image>(
-                nh_.resolveName(params_.image_topic), &BarcodeReader::saveImageMsg, this);
-            publisher_ = iu::advertiseInterprocess<sensor_msgs::Image>(
-                nh_.resolveName(params_.barcode_topic));
-        } else {
-            const image_transport::ImageTransport it(nh_);
-            subscriber_ =
-                iu::subscribeImageTransport(it, params_.image_topic, &BarcodeReader::saveImageMsg,
-                                            this, params_.image_transport);
-            publisher_ = iu::advertiseImageTransport(it, params_.barcode_topic);
-        }
+        image_transport::ImageTransport it(nh);
+        subscriber_ =
+            it.subscribe("image", 1, &BarcodeReader::saveImageMsg, this, params_.image_transport);
+        publisher_ = it.advertise("barcode_image", 1);
 
         // start scanning barcodes
-        timer_ = nh_.createTimer(params_.scan_interval, &BarcodeReader::scanImageMsg, this);
+        timer_ = nh.createTimer(params_.scan_interval, &BarcodeReader::scanImageMsg, this);
     }
 
     virtual ~BarcodeReader() {
-        // stop the timer first or the timer may call the publisher after the publisher's
-        // destruction
+        // stop the timer first
+        // or the timer may call the publisher after the publisher's destruction
         timer_.stop();
     }
 
-   private:
+  private:
     void saveImageMsg(const sensor_msgs::ImageConstPtr &image_msg) {
-        boost::lock_guard<boost::mutex> lock(mutex_);
+        boost::lock_guard< boost::mutex > lock(mutex_);
         image_msg_ = image_msg;
     }
 
@@ -87,7 +68,7 @@ class BarcodeReader {
         // 0. do nothing if no nodes sbscribe barcode image topic
         //
 
-        if (publisher_->getNumSubscribers() == 0) {
+        if (publisher_.getNumSubscribers() == 0) {
             return;
         }
 
@@ -97,11 +78,11 @@ class BarcodeReader {
 
         sensor_msgs::ImageConstPtr image_msg;
         {
-            boost::lock_guard<boost::mutex> lock(mutex_);
+            boost::lock_guard< boost::mutex > lock(mutex_);
             image_msg = image_msg_;
         }
         if (!image_msg) {
-            ROS_WARN("Empty image message");
+            ROS_WARN("scanImageMsg: empty image message");
             return;
         }
 
@@ -123,11 +104,11 @@ class BarcodeReader {
         // make the image darker
         barcode_image->image *= 0.5;
 
-        if (zbar_image.symbol_begin() != zbar_image.symbol_end()) {  // if found
+        if (zbar_image.symbol_begin() != zbar_image.symbol_end()) { // if found
             // draw each barcode polygon and put data on the polygon
             for (zbar::Image::SymbolIterator symbol = zbar_image.symbol_begin();
                  symbol != zbar_image.symbol_end(); ++symbol) {
-                std::vector<cv::Point> points(symbol->get_location_size());
+                std::vector< cv::Point > points(symbol->get_location_size());
                 cv::Rect rect(barcode_image->image.cols, barcode_image->image.rows, 0, 0);
                 for (int i = 0; i < symbol->get_location_size(); ++i) {
                     const int x(symbol->get_location_x(i));
@@ -153,7 +134,7 @@ class BarcodeReader {
                 rect.height -= rect.y;
                 putText(barcode_image->image, symbol->get_data(), rect);
             }
-        } else {  // if not found
+        } else { // if not found
             putText(barcode_image->image, " No Barcode Found ",
                     cv::Rect(0, 0, barcode_image->image.cols, barcode_image->image.rows));
         }
@@ -162,26 +143,25 @@ class BarcodeReader {
         // 4. publish the barcode image
         //
 
-        publisher_->publish(*barcode_image->toImageMsg());
+        publisher_.publish(*barcode_image->toImageMsg());
     }
 
     void putText(cv::Mat &image, const std::string &text, const cv::Rect &rect) {
         const cv::Size size1(
             cv::getTextSize(text, cv::FONT_HERSHEY_SIMPLEX, 1., params_.text_tickness, NULL));
-        const double scale(std::min(static_cast<double>(rect.width) / size1.width,
-                                    static_cast<double>(rect.height) / size1.height));
+        const double scale(std::min(static_cast< double >(rect.width) / size1.width,
+                                    static_cast< double >(rect.height) / size1.height));
         cv::putText(image, text, cv::Point(rect.x, rect.y + rect.height / 2),
                     cv::FONT_HERSHEY_SIMPLEX, scale, params_.text_color, params_.text_tickness);
     }
 
-   private:
+  private:
     const Params params_;
 
-    ros::NodeHandle nh_;
-    ros::Timer timer_;
+    image_transport::Subscriber subscriber_;
+    image_transport::Publisher publisher_;
 
-    interprocess_utilities::SubscriberInterface<sensor_msgs::Image>::Ptr subscriber_;
-    interprocess_utilities::PublisherInterface<sensor_msgs::Image>::Ptr publisher_;
+    ros::Timer timer_;
 
     sensor_msgs::ImageConstPtr image_msg_;
     boost::mutex mutex_;

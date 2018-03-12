@@ -1,50 +1,49 @@
 #include <string>
+#include <vector>
 
 #include <barcode_reader/barcode_reader.hpp>
-#include <param_utilities/param_utilities.hpp>
 #include <ros/duration.h>
 #include <ros/init.h>
 #include <ros/node_handle.h>
+#include <ros/param.h>
 
 #include <opencv2/core/core.hpp>
 
+cv::Scalar RGBParam(const std::string &key, const cv::Scalar &default_val) {
+    namespace rp = ros::param;
+    std::vector< int > val;
+    rp::get(key, val);
+    return val.size() == 3 ? cv::Scalar(val[2], val[1], val[0]) : default_val;
+}
+
 int main(int argc, char *argv[]) {
     namespace br = barcode_reader;
-    namespace pu = param_utilities;
+    namespace rp = ros::param;
 
     //
     // ROS initialization
     //
 
     ros::init(argc, argv, "barcode_reader");
-    ros::NodeHandle handle;
+    ros::NodeHandle nh;
 
     //
     // load parameters
     //
 
     br::BarcodeReader::Params params;
-    params.image_topic = pu::param<std::string>("~image_topic", "image");
-    params.use_interprocess = pu::param("~use_interprocess", false);
-    params.image_transport = pu::param<std::string>("~image_transport", "compressed");
-    params.barcode_topic = pu::param<std::string>("~barcode_topic", "barcode_image");
-    params.scan_interval = ros::Duration(pu::param("~scan_interval", 1.));
-    params.text_tickness = pu::param("~text_tickness", 2);
-    {
-        const cv::Vec3i rgb(pu::param<cv::Vec3i>("~text_rgb", cv::Vec3i(255, 255, 255)));
-        params.text_color = CV_RGB(rgb[0], rgb[1], rgb[2]);
-    }
-    params.line_tickness = pu::param("~line_tickness", 3);
-    {
-        const cv::Vec3i rgb(pu::param<cv::Vec3i>("~line_rgb", cv::Vec3i(255, 0, 0)));
-        params.line_color = CV_RGB(rgb[0], rgb[1], rgb[2]);
-    }
+    params.image_transport = rp::param< std::string >("~image_transport", "raw");
+    params.scan_interval = ros::Duration(rp::param("~scan_interval", 0.5));
+    params.text_tickness = rp::param("~text_tickness", 2);
+    params.text_color = RGBParam("~text_rgb", CV_RGB(255, 255, 255));
+    params.line_tickness = rp::param("~line_tickness", 3);
+    params.line_color = RGBParam("~line_rgb", CV_RGB(255, 0, 0));
 
     //
     // spin the node
     //
 
-    br::BarcodeReader node(handle, params);
+    br::BarcodeReader node(nh, params);
 
     ros::spin();
 
