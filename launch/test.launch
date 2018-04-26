@@ -1,41 +1,20 @@
 <launch>
-    <!-- -->
-    <!-- interprocess core node -->
-    <node pkg="interprocess_utilities" type="interprocess_core" name="interprocess_core" output="screen">
-        <rosparam>
-            size: 20000000 # around 20MB
-        </rosparam>
-    </node>
-    <!-- -->
-    <!-- image source -->
-    <node pkg="image_utilities" type="publish_image_files" name="publish_image" output="screen">
-        <rosparam subst_value="true">
-            topic: image
-            use_interprocess: true
-            frame_id: local_drive
-            encoding: bgr8
-            frequency: 10
-            image_path: $(find barcode_reader)/images/
-        </rosparam>
-    </node>
-    <!-- barcode reader -->
-    <node pkg="barcode_reader" type="barcode_reader_node" name="barcode_reader" output="screen">
-        <rosparam>
-            image_topic: image
-            barcode_topic: barcode_image
-            use_interprocess: true
-            scan_interval: 0.33
-            text_tickness: 2
-            text_rgb: [255,255,255]
-            line_tickness: 3
-            line_rgb: [0,255,0]
-        </rosparam>
-    </node>
-    <!-- viewer -->
-    <node pkg="image_utilities" type="preview_images" name="preview_barcode_image" output="screen">
-        <rosparam>
-            topic: barcode_image
-            use_interprocess: true
-        </rosparam>
-    </node>
+      <!-- -->
+      <!-- barcode detection -->
+      <node pkg="nodelet" type="nodelet" name="barcode_reader"
+            args="standalone barcode_reader/BarcodeReader" output="screen">
+            <remap from="image_raw" to="image_raw"/>
+            <remap from="image_out" to="barcode_image"/>
+            <remap from="barcodes_out" to="barcode_data"/>
+            <param name="scan_interval" value="0.5"/>
+            <param name="republish_image" value="true"/>
+      </node>
+      <!-- -->
+      <!-- barcode drawing -->
+      <!-- TODO: add drawing nodelet -->
+      <!-- -->
+      <!-- viewer -->
+      <node pkg="image_view" type="image_view" name="image_view" output="screen">
+            <remap from="image" to="barcode_image"/>
+      </node>
 </launch>
