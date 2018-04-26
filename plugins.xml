@@ -1,0 +1,5 @@
+<library path="lib/libbarcode_reader">
+    <class name="barcode_reader/BarcodeReader" type="barcode_reader::BarcodeReader" base_class_type="nodelet::Nodelet">
+        <description>reads barcodes in images</description>
+    </class>
+</library>
