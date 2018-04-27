@@ -1,19 +1,20 @@
 #ifndef _BARCODE_READER_BARCODE_READER_HPP_
 #define _BARCODE_READER_BARCODE_READER_HPP_
 
-#include <string>
-#include <vector>
-
 #include <cv_bridge/cv_bridge.h>
 #include <image_transport/image_transport.h>
-#include <ros/console.h>
+#include <image_transport/subscriber.h>
+#include <nodelet/nodelet.h>
+#include <object_detection_msgs/Objects.h>
+#include <object_detection_msgs/Point.h>
+#include <object_detection_msgs/Points.h>
 #include <ros/duration.h>
 #include <ros/node_handle.h>
+#include <ros/publisher.h>
 #include <ros/timer.h>
 #include <sensor_msgs/Image.h>
 
-#include <opencv2/core/core.hpp>
-
+#include <boost/foreach.hpp>
 #include <boost/thread/locks.hpp>
 #include <boost/thread/mutex.hpp>
 
@@ -21,153 +22,132 @@
 
 namespace barcode_reader {
 
-class BarcodeReader {
-  public:
-    struct Params {
-        std::string image_transport;
+class BarcodeReader : public nodelet::Nodelet {
+public:
+  BarcodeReader() {}
 
-        ros::Duration scan_interval;
+  virtual ~BarcodeReader() {
+    // stop the timer first
+    // or the timer may call the publisher after the publisher's destruction
+    scan_timer_.stop();
+  }
 
-        int text_tickness;
-        cv::Scalar text_color;
-        int line_tickness;
-        cv::Scalar line_color;
-    };
+  virtual void onInit() {
+    ros::NodeHandle &nh(getNodeHandle());
+    ros::NodeHandle &pnh(getPrivateNodeHandle());
 
-  public:
-    BarcodeReader(const ros::NodeHandle &nh, const Params &params) : params_(params) {
-        // enable QRcode detection with symbol positions
-        scanner_.set_config(zbar::ZBAR_NONE, zbar::ZBAR_CFG_ENABLE, 0);
-        scanner_.set_config(zbar::ZBAR_QRCODE, zbar::ZBAR_CFG_ENABLE, 1);
-        scanner_.set_config(zbar::ZBAR_NONE, zbar::ZBAR_CFG_POSITION, 1);
+    // load params
+    const std::vector< std::string > scanner_configs(
+        pnh.param("scanner_configs", defaultScannerConfigs()));
+    const ros::Duration scan_interval(pnh.param("scan_interval", 0.5));
+    republish_image_ = pnh.param("republish_image", false);
 
-        // setup the subscriber and the publisher of the given interface
-        image_transport::ImageTransport it(nh);
-        subscriber_ =
-            it.subscribe("image", 1, &BarcodeReader::saveImageMsg, this, params_.image_transport);
-        publisher_ = it.advertise("barcode_image", 1);
-
-        // start scanning barcodes
-        timer_ = nh.createTimer(params_.scan_interval, &BarcodeReader::scanImageMsg, this);
+    // enable QRcode detection with symbol positions
+    BOOST_FOREACH (const std::string &config, scanner_configs) {
+      if (scanner_.set_config(config) != 0) {
+        NODELET_ERROR_STREAM("Faild to set scanner config: " << config);
+      }
     }
 
-    virtual ~BarcodeReader() {
-        // stop the timer first
-        // or the timer may call the publisher after the publisher's destruction
-        timer_.stop();
+    // start storing images to be scanned
+    image_transport::ImageTransport it(nh);
+    image_subscriber_ = it.subscribe("image_raw", 1, &BarcodeReader::saveImageMsg, this);
+
+    // start scanning barcodes
+    if (republish_image_) {
+      image_publisher_ = it.advertise("image_out", 1, true);
+    }
+    barcode_publisher_ = nh.advertise< object_detection_msgs::Objects >("barcodes_out", 1, true);
+    scan_timer_ = nh.createTimer(scan_interval, &BarcodeReader::scanImageMsg, this);
+  }
+
+private:
+  static std::vector< std::string > defaultScannerConfigs() {
+    std::vector< std::string > configs;
+    // disable all detection
+    configs.push_back("disable");
+    // enable QR code detection
+    configs.push_back("qrcode.enable");
+    // detect with position
+    configs.push_back("position");
+    return configs;
+  }
+
+  void saveImageMsg(const sensor_msgs::ImageConstPtr &image_msg) {
+    boost::lock_guard< boost::mutex > lock(mutex_);
+    image_msg_ = image_msg;
+  }
+
+  void scanImageMsg(const ros::TimerEvent &) {
+    // do nothing if no nodes sbscribe barcode image topic
+    if (barcode_publisher_.getNumSubscribers() == 0) {
+      return;
     }
 
-  private:
-    void saveImageMsg(const sensor_msgs::ImageConstPtr &image_msg) {
-        boost::lock_guard< boost::mutex > lock(mutex_);
-        image_msg_ = image_msg;
+    // pick the latest subscribed image message
+    sensor_msgs::ImageConstPtr image_msg;
+    {
+      boost::lock_guard< boost::mutex > lock(mutex_);
+      image_msg = image_msg_;
+    }
+    if (!image_msg) {
+      NODELET_WARN("scanImageMsg: empty image message");
+      return;
     }
 
-    void scanImageMsg(const ros::TimerEvent &) {
-        //
-        // 0. do nothing if no nodes sbscribe barcode image topic
-        //
+    // scan the mono image
+    cv_bridge::CvImageConstPtr mono_image(cv_bridge::toCvShare(image_msg, "mono8"));
+    if (!mono_image) {
+      NODELET_ERROR("scanImageMsg: image conversion error");
+      return;
+    }
+    zbar::Image zbar_image(mono_image->image.cols, mono_image->image.rows, "Y800",
+                           mono_image->image.data, mono_image->image.total());
+    scanner_.scan(zbar_image);
 
-        if (publisher_.getNumSubscribers() == 0) {
-            return;
-        }
-
-        //
-        // 1. pick the latest subscribed image message
-        //
-
-        sensor_msgs::ImageConstPtr image_msg;
-        {
-            boost::lock_guard< boost::mutex > lock(mutex_);
-            image_msg = image_msg_;
-        }
-        if (!image_msg) {
-            ROS_WARN("scanImageMsg: empty image message");
-            return;
-        }
-
-        //
-        // 2. scan the mono image
-        //
-
-        cv_bridge::CvImageConstPtr mono_image(cv_bridge::toCvShare(image_msg, "mono8"));
-        zbar::Image zbar_image(mono_image->image.cols, mono_image->image.rows, "Y800",
-                               mono_image->image.data, mono_image->image.size().area());
-        scanner_.scan(zbar_image);
-
-        //
-        // 3. visualize detected barcodes on the raw image
-        //
-
-        cv_bridge::CvImagePtr barcode_image(cv_bridge::toCvCopy(image_msg, "bgr8"));
-
-        // make the image darker
-        barcode_image->image *= 0.5;
-
-        if (zbar_image.symbol_begin() != zbar_image.symbol_end()) { // if found
-            // draw each barcode polygon and put data on the polygon
-            for (zbar::Image::SymbolIterator symbol = zbar_image.symbol_begin();
-                 symbol != zbar_image.symbol_end(); ++symbol) {
-                std::vector< cv::Point > points(symbol->get_location_size());
-                cv::Rect rect(barcode_image->image.cols, barcode_image->image.rows, 0, 0);
-                for (int i = 0; i < symbol->get_location_size(); ++i) {
-                    const int x(symbol->get_location_x(i));
-                    const int y(symbol->get_location_y(i));
-                    points[i].x = x;
-                    points[i].y = y;
-                    if (rect.x > x) {
-                        rect.x = x;
-                    }
-                    if (rect.y > y) {
-                        rect.y = y;
-                    }
-                    if (rect.width < x) {
-                        rect.width = x;
-                    }
-                    if (rect.height < y) {
-                        rect.height = y;
-                    }
-                }
-                cv::polylines(barcode_image->image, points, true, params_.line_color,
-                              params_.line_tickness);
-                rect.width -= rect.x;
-                rect.height -= rect.y;
-                putText(barcode_image->image, symbol->get_data(), rect);
-            }
-        } else { // if not found
-            putText(barcode_image->image, " No Barcode Found ",
-                    cv::Rect(0, 0, barcode_image->image.cols, barcode_image->image.rows));
-        }
-
-        //
-        // 4. publish the barcode image
-        //
-
-        publisher_.publish(*barcode_image->toImageMsg());
+    // pack a message of detected barcodes
+    object_detection_msgs::Objects barcode_msg;
+    barcode_msg.header = image_msg->header;
+    for (zbar::Image::SymbolIterator symbol = zbar_image.symbol_begin();
+         symbol != zbar_image.symbol_end(); ++symbol) {
+      // set data
+      barcode_msg.names.push_back(symbol->get_data());
+      // set location
+      object_detection_msgs::Points contour;
+      for (int i = 0; i < symbol->get_location_size(); ++i) {
+        object_detection_msgs::Point point;
+        point.x = symbol->get_location_x(i);
+        point.y = symbol->get_location_y(i);
+        contour.points.push_back(point);
+      }
+      barcode_msg.contours.push_back(contour);
     }
 
-    void putText(cv::Mat &image, const std::string &text, const cv::Rect &rect) {
-        const cv::Size size1(
-            cv::getTextSize(text, cv::FONT_HERSHEY_SIMPLEX, 1., params_.text_tickness, NULL));
-        const double scale(std::min(static_cast< double >(rect.width) / size1.width,
-                                    static_cast< double >(rect.height) / size1.height));
-        cv::putText(image, text, cv::Point(rect.x, rect.y + rect.height / 2),
-                    cv::FONT_HERSHEY_SIMPLEX, scale, params_.text_color, params_.text_tickness);
+    // publish the barcode image
+    if (barcode_msg.names.empty()) {
+      // no barcodes found
+      return;
     }
+    if (republish_image_) {
+      image_publisher_.publish(image_msg);
+    }
+    barcode_publisher_.publish(barcode_msg);
+  }
 
-  private:
-    const Params params_;
+private:
+  bool republish_image_;
 
-    image_transport::Subscriber subscriber_;
-    image_transport::Publisher publisher_;
+  image_transport::Subscriber image_subscriber_;
 
-    ros::Timer timer_;
+  image_transport::Publisher image_publisher_;
+  ros::Publisher barcode_publisher_;
+  ros::Timer scan_timer_;
 
-    sensor_msgs::ImageConstPtr image_msg_;
-    boost::mutex mutex_;
+  sensor_msgs::ImageConstPtr image_msg_;
+  boost::mutex mutex_;
 
-    zbar::ImageScanner scanner_;
+  zbar::ImageScanner scanner_;
 };
-}
+} // namespace barcode_reader
 
 #endif /* _BARCODE_READER_BARCODE_READER_HPP_ */

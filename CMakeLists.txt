@@ -8,6 +8,9 @@ find_package(
   catkin REQUIRED COMPONENTS
   cv_bridge
   image_transport
+  nodelet
+  object_detection_msgs
+  pluginlib
   roscpp
   sensor_msgs
   )
@@ -103,8 +106,8 @@ find_package(
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
   INCLUDE_DIRS include
-#  LIBRARIES barcode_reader
-  CATKIN_DEPENDS cv_bridge image_transport roscpp sensor_msgs
+  LIBRARIES barcode_reader
+  CATKIN_DEPENDS cv_bridge image_transport nodelet object_detection_msgs pluginlib roscpp sensor_msgs
 #  DEPENDS system_lib
 )
 
@@ -121,20 +124,23 @@ include_directories(
   )
 
 ## Declare a C++ library
-# add_library(barcode_reader
-#   src/${PROJECT_NAME}/barcode_reader.cpp
-# )
+add_library(barcode_reader
+  src/barcode_reader.cpp
+)
 
 ## Add cmake target dependencies of the library
 ## as an example, code may need to be generated before libraries
 ## either from message generation or dynamic reconfigure
-# add_dependencies(barcode_reader ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+add_dependencies(
+  barcode_reader
+  ${catkin_EXPORTED_TARGETS}
+)
 
 ## Declare a C++ executable
-add_executable(
-  barcode_reader_node
-  src/barcode_reader_node.cpp
-  )
+#add_executable(
+#  barcode_reader_node
+#  src/barcode_reader_node.cpp
+#  )
 
 ## Add cmake target dependencies of the executable
 ## same as for the library above
@@ -142,7 +148,7 @@ add_executable(
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries(
-  barcode_reader_node
+  barcode_reader
   rt
   ${catkin_LIBRARIES}
   zbar
