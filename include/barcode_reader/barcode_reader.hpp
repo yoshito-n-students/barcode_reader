@@ -14,6 +14,7 @@
 #include <ros/timer.h>
 #include <sensor_msgs/Image.h>
 
+#include <boost/foreach.hpp>
 #include <boost/thread/locks.hpp>
 #include <boost/thread/mutex.hpp>
 
@@ -36,14 +37,17 @@ public:
     ros::NodeHandle &pnh(getPrivateNodeHandle());
 
     // load params
+    const std::vector< std::string > scanner_configs(
+        pnh.param("scanner_configs", defaultScannerConfigs()));
     const ros::Duration scan_interval(pnh.param("scan_interval", 0.5));
     republish_image_ = pnh.param("republish_image", false);
-    // TODO: load barcode types to detect
 
     // enable QRcode detection with symbol positions
-    scanner_.set_config(zbar::ZBAR_NONE, zbar::ZBAR_CFG_ENABLE, 0);
-    scanner_.set_config(zbar::ZBAR_QRCODE, zbar::ZBAR_CFG_ENABLE, 1);
-    scanner_.set_config(zbar::ZBAR_NONE, zbar::ZBAR_CFG_POSITION, 1);
+    BOOST_FOREACH (const std::string &config, scanner_configs) {
+      if (scanner_.set_config(config) != 0) {
+        NODELET_ERROR_STREAM("Faild to set scanner config: " << config);
+      }
+    }
 
     // start storing images to be scanned
     image_transport::ImageTransport it(nh);
@@ -58,6 +62,17 @@ public:
   }
 
 private:
+  static std::vector< std::string > defaultScannerConfigs() {
+    std::vector< std::string > configs;
+    // disable all detection
+    configs.push_back("disable");
+    // enable QR code detection
+    configs.push_back("qrcode.enable");
+    // detect with position
+    configs.push_back("position");
+    return configs;
+  }
+
   void saveImageMsg(const sensor_msgs::ImageConstPtr &image_msg) {
     boost::lock_guard< boost::mutex > lock(mutex_);
     image_msg_ = image_msg;

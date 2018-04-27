@@ -20,6 +20,10 @@ barcodes_out (object_detection_msgs/Objects)
 * data and location of detected barcodes
 
 ## Parameters
+~scanner_config (string array, defalut: \<detect QR code with position>)
+* each string element is passed to zbar::ImageScanner::set_config()
+* see zbar documentation for details
+
 ~scan_interval (double, default: 0.5)
 * scan interval in seconds
 
