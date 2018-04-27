@@ -1,8 +1,11 @@
 <launch>
       <!-- -->
+      <!-- barcode reader + drawer -->
+      <node name="barcode_node" pkg="nodelet" type="nodelet" args="manager" output="screen"/>
+      <!-- -->
       <!-- barcode detection -->
-      <node name="barcode_reader" pkg="nodelet" type="nodelet"
-            args="standalone barcode_reader/BarcodeReader" output="screen">
+      <node name="barcode_reader_loader" pkg="nodelet" type="nodelet" 
+            args="load barcode_reader/BarcodeReader barcode_node" output="screen">
             <remap from="image_raw" to="image_raw"/>
             <remap from="image_out" to="barcode_image"/>
             <remap from="barcodes_out" to="barcode_data"/>
@@ -11,15 +14,15 @@
       </node>
       <!-- -->
       <!-- barcode drawing -->
-      <node name="barcode_drawer" pkg="nodelet" type="nodelet"
-            args="standalone object_drawer/ObjectDrawer" output="screen">
+      <node name="barcode_drawer_loader" pkg="nodelet" type="nodelet" 
+            args="load object_drawer/ObjectDrawer barcode_node" output="screen">
             <remap from="image_raw" to="barcode_image"/>
             <remap from="objects_in" to="barcode_data"/>
             <remap from="image_out" to="annotated_image"/>
       </node>
       <!-- -->
       <!-- viewer -->
-      <node pkg="image_view" type="image_view" name="image_view" output="screen">
+      <node name="barcode_view" pkg="image_view" type="image_view" output="screen">
             <remap from="image" to="annotated_image"/>
       </node>
 </launch>
