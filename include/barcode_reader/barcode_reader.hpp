@@ -107,7 +107,7 @@ private:
 
     // pack a message of detected barcodes
     object_detection_msgs::Objects barcode_msg;
-    barcode_msg.header.stamp = image_msg->header.stamp;
+    barcode_msg.header = image_msg->header;
     for (zbar::Image::SymbolIterator symbol = zbar_image.symbol_begin();
          symbol != zbar_image.symbol_end(); ++symbol) {
       // set data
