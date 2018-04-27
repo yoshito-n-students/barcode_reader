@@ -8,7 +8,6 @@
 #include <object_detection_msgs/Objects.h>
 #include <object_detection_msgs/Point.h>
 #include <object_detection_msgs/Points.h>
-#include <ros/console.h>
 #include <ros/duration.h>
 #include <ros/node_handle.h>
 #include <ros/publisher.h>
@@ -77,14 +76,14 @@ private:
       image_msg = image_msg_;
     }
     if (!image_msg) {
-      ROS_WARN("scanImageMsg: empty image message");
+      NODELET_WARN("scanImageMsg: empty image message");
       return;
     }
 
     // scan the mono image
     cv_bridge::CvImageConstPtr mono_image(cv_bridge::toCvShare(image_msg, "mono8"));
     if (!mono_image) {
-      ROS_ERROR("scanImageMsg: image conversion error");
+      NODELET_ERROR("scanImageMsg: image conversion error");
       return;
     }
     zbar::Image zbar_image(mono_image->image.cols, mono_image->image.rows, "Y800",
