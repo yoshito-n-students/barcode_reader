@@ -6,7 +6,7 @@ zbar
 * `sudo apt-get install libzbar-dev`
 
 object_detection_msgs
-* TODO: github url here
+* https://github.com/yoshito-n-students/object_detection_msgs
 
 ## Subscribed Topics
 image_raw (sensor_msgs/Image)
