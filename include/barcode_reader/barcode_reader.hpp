@@ -106,12 +106,13 @@ private:
     scanner_.scan(zbar_image);
 
     // pack a message of detected barcodes
-    object_detection_msgs::Objects barcode_msg;
-    barcode_msg.header = image_msg->header;
+    // (use a shared pointer to avoid data copy between nodelets)
+    object_detection_msgs::ObjectsPtr barcode_msg(new object_detection_msgs::Objects);
+    barcode_msg->header = image_msg->header;
     for (zbar::Image::SymbolIterator symbol = zbar_image.symbol_begin();
          symbol != zbar_image.symbol_end(); ++symbol) {
       // set data
-      barcode_msg.names.push_back(symbol->get_data());
+      barcode_msg->names.push_back(symbol->get_data());
       // set location
       object_detection_msgs::Points contour;
       for (int i = 0; i < symbol->get_location_size(); ++i) {
@@ -120,11 +121,11 @@ private:
         point.y = symbol->get_location_y(i);
         contour.points.push_back(point);
       }
-      barcode_msg.contours.push_back(contour);
+      barcode_msg->contours.push_back(contour);
     }
 
     // publish the barcode image
-    if (barcode_msg.names.empty()) {
+    if (barcode_msg->names.empty()) {
       // no barcodes found
       return;
     }
