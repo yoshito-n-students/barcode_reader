@@ -79,6 +79,8 @@ private:
   }
 
   void scanImageMsg(const ros::TimerEvent &) {
+    namespace odm = object_detection_msgs;
+
     // do nothing if no nodes sbscribe barcode image topic
     if (barcode_publisher_.getNumSubscribers() == 0) {
       return;
@@ -107,16 +109,16 @@ private:
 
     // pack a message of detected barcodes
     // (use a shared pointer to avoid data copy between nodelets)
-    object_detection_msgs::ObjectsPtr barcode_msg(new object_detection_msgs::Objects);
+    const odm::ObjectsPtr barcode_msg(new odm::Objects);
     barcode_msg->header = image_msg->header;
     for (zbar::Image::SymbolIterator symbol = zbar_image.symbol_begin();
          symbol != zbar_image.symbol_end(); ++symbol) {
       // set data
       barcode_msg->names.push_back(symbol->get_data());
       // set location
-      object_detection_msgs::Points contour;
+      odm::Points contour;
       for (int i = 0; i < symbol->get_location_size(); ++i) {
-        object_detection_msgs::Point point;
+        odm::Point point;
         point.x = symbol->get_location_x(i);
         point.y = symbol->get_location_y(i);
         contour.points.push_back(point);
