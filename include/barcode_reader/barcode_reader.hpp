@@ -4,6 +4,7 @@
 #include <cv_bridge/cv_bridge.h>
 #include <image_transport/image_transport.h>
 #include <image_transport/subscriber.h>
+#include <image_transport/transport_hints.h>
 #include <nodelet/nodelet.h>
 #include <object_detection_msgs/Objects.h>
 #include <object_detection_msgs/Point.h>
@@ -51,7 +52,11 @@ public:
 
     // start storing images to be scanned
     image_transport::ImageTransport it(nh);
-    image_subscriber_ = it.subscribe("image_raw", 1, &BarcodeReader::saveImageMsg, this);
+    const image_transport::TransportHints default_hints;
+    image_subscriber_ =
+        it.subscribe("image_raw", 1, &BarcodeReader::saveImageMsg, this,
+                     image_transport::TransportHints(default_hints.getTransport(),
+                                                     default_hints.getRosHints(), pnh));
 
     // start scanning barcodes
     if (republish_image_) {
@@ -79,6 +84,8 @@ private:
   }
 
   void scanImageMsg(const ros::TimerEvent &) {
+    namespace odm = object_detection_msgs;
+
     // do nothing if no nodes sbscribe barcode image topic
     if (barcode_publisher_.getNumSubscribers() == 0) {
       return;
@@ -106,25 +113,26 @@ private:
     scanner_.scan(zbar_image);
 
     // pack a message of detected barcodes
-    object_detection_msgs::Objects barcode_msg;
-    barcode_msg.header = image_msg->header;
+    // (use a shared pointer to avoid data copy between nodelets)
+    const odm::ObjectsPtr barcode_msg(new odm::Objects);
+    barcode_msg->header = image_msg->header;
     for (zbar::Image::SymbolIterator symbol = zbar_image.symbol_begin();
          symbol != zbar_image.symbol_end(); ++symbol) {
       // set data
-      barcode_msg.names.push_back(symbol->get_data());
+      barcode_msg->names.push_back(symbol->get_data());
       // set location
-      object_detection_msgs::Points contour;
+      odm::Points contour;
       for (int i = 0; i < symbol->get_location_size(); ++i) {
-        object_detection_msgs::Point point;
+        odm::Point point;
         point.x = symbol->get_location_x(i);
         point.y = symbol->get_location_y(i);
         contour.points.push_back(point);
       }
-      barcode_msg.contours.push_back(contour);
+      barcode_msg->contours.push_back(contour);
     }
 
     // publish the barcode image
-    if (barcode_msg.names.empty()) {
+    if (barcode_msg->names.empty()) {
       // no barcodes found
       return;
     }
