@@ -4,6 +4,7 @@
 #include <cv_bridge/cv_bridge.h>
 #include <image_transport/image_transport.h>
 #include <image_transport/subscriber.h>
+#include <image_transport/transport_hints.h>
 #include <nodelet/nodelet.h>
 #include <object_detection_msgs/Objects.h>
 #include <object_detection_msgs/Point.h>
@@ -51,7 +52,11 @@ public:
 
     // start storing images to be scanned
     image_transport::ImageTransport it(nh);
-    image_subscriber_ = it.subscribe("image_raw", 1, &BarcodeReader::saveImageMsg, this);
+    const image_transport::TransportHints default_hints;
+    image_subscriber_ =
+        it.subscribe("image_raw", 1, &BarcodeReader::saveImageMsg, this,
+                     image_transport::TransportHints(default_hints.getTransport(),
+                                                     default_hints.getRosHints(), pnh));
 
     // start scanning barcodes
     if (republish_image_) {
