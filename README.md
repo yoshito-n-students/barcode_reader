@@ -5,6 +5,7 @@ A ROS nodelet to locate a barcode (ex. QR code) in a image
 zbar
 * `sudo apt-get install libzbar-dev`
 
+## Dependencies
 object_detection_msgs
 * https://github.com/yoshito-n-students/object_detection_msgs
 
